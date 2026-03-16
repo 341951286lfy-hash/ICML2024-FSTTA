@@ -64,6 +64,8 @@ flag="--root_dir ${DATA_ROOT} \
  --rgb_corrupt_type ${CORRUPTION} \
  --rgb_corrupt_severity ${SEVERITY}"
 
-CUDA_VISIBLE_DEVICES='0' python3 main_nav_obj.py $flag \
+: "${CUDA_VISIBLE_DEVICES:=0}"
+
+python3 main_nav_obj.py $flag \
   --resume_file "${CKPT}" \
   --test --submit
