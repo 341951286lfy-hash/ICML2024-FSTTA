@@ -84,8 +84,6 @@ def build_dataset(args, rank=0):
             multi_startpoints=args.multi_startpoints,
         )
 
-    # val_env_names = ['val_train_seen']
-    # val_env_names = ['val_train_seen', 'val_seen', 'val_unseen']
     val_env_names = ['val_unseen']
     if args.submit:
         val_env_names.append('test')
@@ -114,7 +112,6 @@ def build_dataset(args, rank=0):
             multi_endpoints=False,
             multi_startpoints=False,
         )
-        # evaluation using all objects
         val_envs[split] = val_env
 
     return train_env, val_envs, aug_env
@@ -134,7 +131,6 @@ def train(args, train_env, val_envs, aug_env=None, rank=-1):
     agent_class = GMapObjectNavAgent
     listner = agent_class(args, train_env, rank=rank)
 
-    # resume file
     start_iter = 0
     if args.resume_file is not None:
         start_iter = listner.load(os.path.join(args.resume_file))
@@ -144,18 +140,14 @@ def train(args, train_env, val_envs, aug_env=None, rank=-1):
                 record_file
             )
 
-    # first evaluation
     if args.eval_first:
         loss_str = "validation before training"
         for env_name, env in val_envs.items():
             listner.env = env
-
-            # Get validation distance from goal under test evaluation conditions
             listner.test(use_dropout=False, feedback='argmax', iters=None)
             preds = listner.get_results()
-
-            # gather distributed results
             preds = merge_dist_results(all_gather(preds))
+
             if default_gpu:
                 score_summary, _ = env.eval_metrics(preds)
                 loss_str += ", %s " % env_name
@@ -165,7 +157,6 @@ def train(args, train_env, val_envs, aug_env=None, rank=-1):
         if default_gpu:
             write_to_record_file(loss_str, record_file)
 
-    # return
     start = time.time()
     if default_gpu:
         write_to_record_file(
@@ -180,18 +171,15 @@ def train(args, train_env, val_envs, aug_env=None, rank=-1):
         interval = min(args.log_every, args.iters - idx)
         iter_ = idx + interval
 
-        # Train for log_every interval
         if aug_env is None:
             listner.env = train_env
-            listner.train(interval, feedback=args.feedback)  # Train interval iters
+            listner.train(interval, feedback=args.feedback)
         else:
             jdx_length = len(range(interval // 2))
             for jdx in range(interval // 2):
-                # Train with GT data
                 listner.env = train_env
                 listner.train(1, feedback=args.feedback)
 
-                # Train with Augmented data
                 listner.env = aug_env
                 listner.train(1, feedback=args.feedback)
 
@@ -199,9 +187,8 @@ def train(args, train_env, val_envs, aug_env=None, rank=-1):
                     print_progress(jdx, jdx_length, prefix='Progress:', suffix='Complete', bar_length=50)
 
         if default_gpu:
-            # Log the training stats to tensorboard
-            total = max(sum(listner.logs['total']), 1)  # RL: total valid actions for all examples in the batch
-            length = max(len(listner.logs['critic_loss']), 1)  # RL: total (max length) in the batch
+            total = max(sum(listner.logs['total']), 1)
+            length = max(len(listner.logs['critic_loss']), 1)
             critic_loss = sum(listner.logs['critic_loss']) / total
             policy_loss = sum(listner.logs['policy_loss']) / total
             OG_loss = sum(listner.logs['OG_loss']) / max(len(listner.logs['OG_loss']), 1)
@@ -223,12 +210,9 @@ def train(args, train_env, val_envs, aug_env=None, rank=-1):
                 record_file
             )
 
-            # Run validation
             loss_str = "iter {}".format(iter_)
             for env_name, env in val_envs.items():
                 listner.env = env
-
-                # Get validation distance from goal under test evaluation conditions
                 listner.test(use_dropout=False, feedback='argmax', iters=None)
                 preds = listner.get_results()
                 preds = merge_dist_results(all_gather(preds))
@@ -240,7 +224,6 @@ def train(args, train_env, val_envs, aug_env=None, rank=-1):
                         loss_str += ', %s: %.2f' % (metric, val)
                         writer.add_scalar('%s/%s' % (metric, env_name), score_summary[metric], idx)
 
-                    # select model by spl
                     if env_name in best_val:
                         if score_summary['spl'] >= best_val[env_name]['spl']:
                             best_val[env_name]['spl'] = score_summary['spl']
